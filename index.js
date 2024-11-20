@@ -94,6 +94,34 @@ app.post('/login', (req, res) => {
     });
 });
 
+app.get('/user/points', (req, res) => {
+    const token = req.headers['authorization'].split(' ')[1]; // 토큰 추출
+    if (!token) return res.status(401).json({ error: '인증되지 않은 요청' });
+  
+    // JWT를 검증하고 사용자 정보를 추출합니다
+    jwt.verify(token, 'your_secret_key', (err, decoded) => {
+      if (err) return res.status(401).json({ error: '토큰이 유효하지 않습니다.' });
+  
+      const userId = decoded.id;
+      
+      // DB에서 사용자 포인트 조회
+      const query = 'SELECT points FROM users WHERE id = ?';
+      db.query(query, [userId], (err, results) => {
+        if (err) {
+          console.error('포인트 조회 오류:', err);
+          return res.status(500).json({ error: '서버 오류' });
+        }
+  
+        if (results.length === 0) {
+          return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
+        }
+  
+        const user = results[0];
+        res.status(200).json({ points: user.points });
+      });
+    });
+  });
+
 
 // 기본 테스트 라우트
 app.get('/', (req, res) => {
