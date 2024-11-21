@@ -185,65 +185,132 @@ app.get('/api/users/hierarchy', async (req, res) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        console.log('디코딩된 토큰 데이터:', decoded); // 전체 디코딩 데이터 출력
+        const username = decoded.username;
 
-        const username = decoded.username; // 토큰에서 username 추출
+        if (!username) {
+            return res.status(400).json({ error: '토큰에 사용자 이름이 없습니다.' });
+        }
 
-        console.log('디코딩된 사용자 이름:', username); // 디버깅: 로그인한 사용자 확인
+        console.log('디코딩된 사용자 이름:', username);
 
         pool.query(
             `
+            WITH RECURSIVE UserHierarchy AS (
+                SELECT 
+                    username AS user_name,
+                    recommender_id,
+                    created_at AS join_date
+                FROM users
+                WHERE username = ?
+
+                UNION ALL
+
+                SELECT 
+                    u.username AS user_name,
+                    u.recommender_id,
+                    u.created_at AS join_date
+                FROM users u
+                INNER JOIN UserHierarchy uh ON u.recommender_id = uh.user_name
+            )
             SELECT 
-                u.username AS user_name,
-                r.username AS recommender_name,
-                u.created_at AS join_date
-            FROM users u
-            LEFT JOIN users r ON u.recommender_id = r.username
-            WHERE r.username = ?; -- 로그인한 사용자를 추천인으로 등록한 사용자 조회
+                user_name,
+                recommender_id,
+                join_date
+            FROM UserHierarchy;
             `,
-            [username],
+            [username], // 로그인 사용자 이름
             (error, results) => {
                 if (error) {
                     console.error('쿼리 오류:', error);
-                    return res.status(500).json({ error: '조직도 데이터를 가져오지 못했습니다.' });
+                    return res.status(500).json({ error: '쿼리 실행 실패' });
                 }
 
-                console.log('쿼리 결과:', results); // 쿼리 결과 디버깅
+                console.log('쿼리 결과:', results);
 
                 if (results.length === 0) {
                     return res.status(404).json({ message: '추천인 데이터가 없습니다.' });
                 }
 
-                // 데이터 트리 구조 변환
-                const hierarchy = buildHierarchy(results);
-                console.log('계층 데이터:', hierarchy); // 트리 구조 디버깅
-                res.status(200).json(hierarchy);
+                // 계층 구조로 변환
+                const hierarchyData = buildHierarchy(results);
+
+                // 변환된 계층 구조 반환
+                res.status(200).json(hierarchyData);
             }
         );
     } catch (error) {
         console.error('토큰 검증 오류:', error);
-        res.status(401).json({ error: '유효하지 않은 토큰입니다.' });
+        res.status(401).json({ error: '토큰 검증 실패' });
     }
 });
 
 function buildHierarchy(users) {
-    const map = {};
-    const roots = [];
+    const map = {};  // 각 사용자의 정보를 저장할 맵
+    const roots = [];  // 최상위 사용자들을 저장할 배열
 
-    users.forEach((user) => {
-        map[user.user_name] = { ...user, children: [] };
+    // 각 사용자 정보를 map에 추가하고 기본적으로 children 배열을 빈 배열로 설정
+    users.forEach(user => {
+        map[user.user_name] = { ...user, children: [] }; 
     });
 
-    users.forEach((user) => {
-        if (user.recommender_name && map[user.recommender_name]) {
-            map[user.recommender_name].children.push(map[user.user_name]);
+    // 계층 관계를 설정
+    users.forEach(user => {
+        if (user.recommender_id) {
+            // 추천인이 있는 경우 추천인의 children에 현재 사용자 추가
+            if (map[user.recommender_id]) {
+                map[user.recommender_id].children.push(map[user.user_name]);
+            }
         } else {
+            // 추천인이 없으면 최상위 사용자로 추가
             roots.push(map[user.user_name]);
         }
     });
 
-    return roots;
+    console.log('계층 구조:', roots);  // 생성된 계층 구조 확인
+    return roots;  // 최상위 사용자부터 시작하는 계층 구조 반환
 }
+
+// 상품 추가 API
+app.post('/add-product', async (req, res) => {
+    const { name, description, price, pointprice, bonuspoint, stock } = req.body;
+
+    // 필수 필드 체크
+    if (!name || !description || price === undefined || stock === undefined) {
+        return res.status(400).json({ error: '모든 필드를 입력해주세요.' });
+    }
+
+    try {
+        // 상품을 데이터베이스에 추가
+        const insertQuery = 'INSERT INTO products (name, description, price, pointprice, bonuspoint , stock) VALUES (?, ?, ?, ?, ?, ?)';
+        db.query(insertQuery, [name, description, price, pointprice, bonuspoint, stock], (err, result) => {
+            if (err) {
+                console.error('상품 추가 오류:', err);
+                return res.status(500).json({ error: '상품 추가 중 오류가 발생했습니다.' });
+            }
+
+            res.status(201).json({ message: '상품이 성공적으로 추가되었습니다.' });
+        });
+    } catch (err) {
+        console.error('서버 오류:', err);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// 상품 목록 조회 API
+app.get('/products', (req, res) => {
+    const selectQuery = 'SELECT * FROM products ORDER BY created_at DESC';
+
+    db.query(selectQuery, (err, results) => {
+        if (err) {
+            console.error('상품 조회 오류:', err);
+            return res.status(500).json({ error: '상품 조회 중 오류가 발생했습니다.' });
+        }
+
+        res.status(200).json(results); // 상품 목록 반환
+    });
+});
+
+
 
 // 서버 실행
 app.listen(3000, () => {
