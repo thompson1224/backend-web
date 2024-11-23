@@ -3,8 +3,6 @@ require('dotenv').config(); // .env 파일을 로드
 
 const jwtSecret = process.env.JWT_SECRET; // JWT_SECRET 값을 환경 변수에서 불러옵니다.
 
-console.log("JWT_SECRET:", process.env.JWT_SECRET);
-
 
 const express = require('express');
 const app = express();
@@ -44,6 +42,27 @@ db.connect((err) => {
     }
 });
 
+// 인증 미들웨어
+const authenticateUser = (req, res, next) => {
+    const token = req.headers.authorization?.split(' ')[1]; // Bearer 토큰 추출
+    if (!token) {
+        return res.status(401).json({ error: '인증 토큰이 필요합니다.' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET); // 토큰 검증
+        console.log('인증 미들웨어 정보', decoded);
+        req.userId = decoded.userId; // 토큰에서 사용자 ID 추출
+        console.log('인증 미들웨어 정보', req.userId);
+
+        next(); // 다음 미들웨어로 이동
+    } catch (err) {
+        console.error('JWT 검증 오류:', err);
+        res.status(401).json({ error: '유효하지 않은 토큰입니다.' });
+    }
+};
+
+
 
 
 // 회원가입 API
@@ -62,8 +81,8 @@ app.post('/signup', async (req, res) => {
         const finalRecommenderId = recommender_id || null;
 
         // DB에 사용자 정보 저장
-        const query = 'INSERT INTO users (username, email, password, recommender_id) VALUES (?, ?, ?, ?)';
-        db.query(query, [username, email, hashedPassword, finalRecommenderId], (err, result) => {
+        const query = 'INSERT INTO users (userid, email, password, recommender_id) VALUES (?, ?, ?, ?)';
+        db.query(query, [userid, email, hashedPassword, finalRecommenderId], (err, result) => {
             if (err) {
                 console.error('회원가입 오류:', err);
                 return res.status(500).json({ error: '서버 오류' });
@@ -96,13 +115,7 @@ app.post('/login', (req, res) => {
             return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
         }
 
-        const user = results[0]; // DB에서 찾은 사용자 정보
-
-        
-
-        // 로그인 시 비밀번호 출력 (디버깅 용도)
-        console.log(`입력된 비밀번호: ${password}`);
-        console.log(`저장된 암호화된 비밀번호: ${user.password}`);
+        const user = results[0]; // DB에서 찾은 사용자 정보        
 
         // 비밀번호 검증
         const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -114,10 +127,12 @@ app.post('/login', (req, res) => {
         // JWT 토큰 생성
         console.log('JWT_SECRET:', process.env.JWT_SECRET); // 비밀 키 확인
 
-        const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, process.env.JWT_SECRET, {
+        const token = jwt.sign({ userId: user.userid, email: user.email }, process.env.JWT_SECRET, {
             expiresIn: '1h',
         });
+        
         console.log('Generated token:', token); // 생성된 토큰 확인
+        console.log('DB에서 찾은 사용자 정보:', user);
 
 
         res.status(200).json({ message: '로그인 성공', token });
@@ -129,9 +144,6 @@ app.get('/user/points', (req, res) => {
     const token = req.headers['authorization']?.split(' ')[1]; // 토큰 추출
     if (!token) return res.status(401).json({ error: '인증되지 않은 요청' });
 
-    console.log('JWT_SECRET:', process.env.JWT_SECRET); // 비밀 키 확인
-    console.log('Received token:', token); // 받은 토큰 확인
-
     // JWT를 검증하고 사용자 정보를 추출합니다
     jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
         if (err) {
@@ -139,10 +151,10 @@ app.get('/user/points', (req, res) => {
             return res.status(401).json({ error: '토큰이 유효하지 않습니다.' });
         }
 
-        const userId = decoded.id;
+        const userId = decoded.userId;
         
         // DB에서 사용자 포인트 조회
-        const query = 'SELECT points FROM users WHERE id = ?';
+        const query = 'SELECT points FROM users WHERE userid = ?';
         db.query(query, [userId], (err, results) => {
             if (err) {
                 console.error('포인트 조회 오류:', err);
@@ -185,8 +197,7 @@ app.get('/api/users/hierarchy', async (req, res) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const username = decoded.username;
-
+        const username = decoded.userId; // userId로 데이터 추출
         if (!username) {
             return res.status(400).json({ error: '토큰에 사용자 이름이 없습니다.' });
         }
@@ -197,23 +208,23 @@ app.get('/api/users/hierarchy', async (req, res) => {
             `
             WITH RECURSIVE UserHierarchy AS (
                 SELECT 
-                    username AS user_name,
+                    userid AS userid,
                     recommender_id,
                     created_at AS join_date
                 FROM users
-                WHERE username = ?
+                WHERE userid = ?
 
                 UNION ALL
 
                 SELECT 
-                    u.username AS user_name,
+                    u.userid AS userid,
                     u.recommender_id,
                     u.created_at AS join_date
                 FROM users u
-                INNER JOIN UserHierarchy uh ON u.recommender_id = uh.user_name
+                INNER JOIN UserHierarchy uh ON u.recommender_id = uh.userid
             )
             SELECT 
-                user_name,
+                userid,
                 recommender_id,
                 join_date
             FROM UserHierarchy;
@@ -310,6 +321,74 @@ app.get('/products', (req, res) => {
     });
 });
 
+// 상품 상세 조회 API
+app.get('/products/:id', async (req, res) => {
+    const { id } = req.params;
+  
+    const query = 'SELECT * FROM products WHERE id = ?';
+    db.query(query, [id], (err, results) => {
+      if (err) {
+        console.error('상품 정보 불러오기 오류:', err);
+        return res.status(500).json({ error: '상품 정보를 가져오는 데 실패했습니다.' });
+      }
+      if (results.length === 0) {
+        return res.status(404).json({ error: '상품을 찾을 수 없습니다.' });
+      }
+  
+      res.json(results[0]);
+    });
+  });
+
+  //상품 구매 API
+  app.post('/purchase', authenticateUser, async (req, res) => {
+    console.log('인증된 사용자 ID:', req.userId); // 디버깅용 로그
+    const { productId, quantity } = req.body;
+    const userId = req.userId; // 인증된 사용자 ID
+
+    try {
+        // 1. 상품 정보 가져오기 (bonuspoint 포함)
+        const query = 'SELECT * FROM products WHERE id = ?';
+        const [product] = await db.promise().query(query, [productId]);
+
+        if (product.length === 0) {
+            return res.status(404).json({ error: '상품을 찾을 수 없습니다.' });
+        }
+
+        const productData = product[0];
+        const totalPrice = productData.price * quantity;
+        const totalBonusPoints = productData.bonuspoint * quantity; // 총 적립 포인트 계산
+
+        // 2. 구매 내역 저장
+        await db.promise().query(
+            'INSERT INTO purchase_history (user_id, product_id, quantity, total_price) VALUES (?, ?, ?, ?)',
+            [userId, productId, quantity, totalPrice]
+        );
+
+        // 3. 포인트 적립 내역 저장
+        await db.promise().query(
+            'INSERT INTO point_history (user_id, type, points, description) VALUES (?, ?, ?, ?)',
+            [userId, 'earn', totalBonusPoints, `${productData.name} 구매 적립`]
+        );
+
+        // 4. 사용자 포인트 업데이트
+        await db.promise().query(
+            'UPDATE users SET points = points + ? WHERE userid = ?',
+            [totalBonusPoints, userId]
+        );
+
+        // 5. 응답 반환
+        res.json({
+            message: '구매가 완료되었습니다.',
+            pointsEarned: totalBonusPoints,
+            totalPrice,
+        });
+    } catch (error) {
+        console.error('구매 처리 중 오류 발생:', error);
+        res.status(500).json({ error: '구매 처리 중 오류가 발생했습니다.' });
+    }
+});
+
+  
 
 
 // 서버 실행
