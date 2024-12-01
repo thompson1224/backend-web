@@ -75,9 +75,9 @@ const authenticateUser = (req, res, next) => {
 
 // 회원가입 API
 app.post('/signup', async (req, res) => {
-    const { username, email, password, recommender_id } = req.body;
+    const { userid, email, password, recommender_id } = req.body;
 
-    if (!username || !email || !password) {
+    if (!userid || !email || !password) {
         return res.status(400).json({ error: '모든 필드를 입력하세요.' });
     }
 
