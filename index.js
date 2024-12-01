@@ -256,12 +256,12 @@ app.get('/api/users/hierarchy', async (req, res) => {
 });
 
 function buildHierarchy(users) {
-    const map = {};  // 각 사용자의 정보를 저장할 맵
-    const roots = [];  // 최상위 사용자들을 저장할 배열
+    const map = {}; // 각 사용자의 정보를 저장할 맵
+    const roots = []; // 최상위 사용자들을 저장할 배열
 
     // 각 사용자 정보를 map에 추가하고 기본적으로 children 배열을 빈 배열로 설정
     users.forEach(user => {
-        map[user.user_name] = { ...user, children: [] }; 
+        map[user.userid] = { ...user, children: [] }; 
     });
 
     // 계층 관계를 설정
@@ -269,17 +269,18 @@ function buildHierarchy(users) {
         if (user.recommender_id) {
             // 추천인이 있는 경우 추천인의 children에 현재 사용자 추가
             if (map[user.recommender_id]) {
-                map[user.recommender_id].children.push(map[user.user_name]);
+                map[user.recommender_id].children.push(map[user.userid]);
             }
         } else {
             // 추천인이 없으면 최상위 사용자로 추가
-            roots.push(map[user.user_name]);
+            roots.push(map[user.userid]);
         }
     });
 
-    console.log('계층 구조:', roots);  // 생성된 계층 구조 확인
-    return roots;  // 최상위 사용자부터 시작하는 계층 구조 반환
+    console.log('계층 구조:', roots); // 생성된 계층 구조 확인
+    return roots; // 최상위 사용자부터 시작하는 계층 구조 반환
 }
+
 
 // 상품 추가 API
 app.post('/add-product', async (req, res) => {
