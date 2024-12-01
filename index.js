@@ -76,14 +76,14 @@ app.post('/signup', async (req, res) => {
 });
 
 app.post('/login', (req, res) => {
-    const { email, password } = req.body;
+    const { userid, password } = req.body;
 
-    if (!email || !password) {
+    if (!userid || !password) {
         return res.status(400).json({ error: '이메일과 비밀번호를 입력하세요.' });
     }
 
-    const query = 'SELECT * FROM users WHERE email = $1';
-    pool.query(query, [email], async (err, results) => {
+    const query = 'SELECT * FROM users WHERE userid = $1';
+    pool.query(query, [userid], async (err, results) => {
         if (err) {
             console.error('DB 쿼리 오류:', err);
             return res.status(500).json({ error: '서버 오류' });
@@ -133,13 +133,13 @@ app.get('/api/users/hierarchy', authenticateUser, async (req, res) => {
     try {
         const query = `
             WITH RECURSIVE UserHierarchy AS (
-                SELECT userid, referrerid, created_at AS join_date
+                SELECT userid, referrerid, createdat AS join_date
                 FROM users
                 WHERE userid = $1
 
                 UNION ALL
 
-                SELECT u.userid, u.referrerid, u.created_at
+                SELECT u.userid, u.referrerid, u.createdat
                 FROM users u
                 INNER JOIN UserHierarchy uh ON u.referrerid = uh.userid
             )
