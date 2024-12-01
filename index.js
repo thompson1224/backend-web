@@ -11,6 +11,13 @@ const cors = require('cors');
 app.use(cors());
 app.use(express.json());
 
+// CORS 설정
+const corsOptions = {
+    origin: 'https://benevolent-96a945.netlify.app', // 허용할 도메인
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
 const pool = new Pool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
