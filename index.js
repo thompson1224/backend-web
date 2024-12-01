@@ -38,9 +38,9 @@ pool.connect((err) => {
 });
 
 app.post('/signup', async (req, res) => {
-    const { userid, email, password, referrerid } = req.body;
+    const { userid, username, email, password, referrerid } = req.body;
 
-    if (!userid || !email || !password) {
+    if (!userid || !username||  !email || !password) {
         return res.status(400).json({ error: '모든 필드를 입력하세요.' });
     }
 
@@ -48,8 +48,8 @@ app.post('/signup', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         const finalRecommenderId = referrerid || null;
 
-        const query = 'INSERT INTO users (userid, email, password, referrerid) VALUES ($1, $2, $3, $4)';
-        await pool.query(query, [userid, email, hashedPassword, finalRecommenderId]);
+        const query = 'INSERT INTO users (userid, username, email, password, referrerid) VALUES ($1, $2, $3, $4, $5)';
+        await pool.query(query, [userid, username, email, hashedPassword, finalRecommenderId]);
 
         res.status(201).json({ message: '회원가입 성공!' });
     } catch (err) {
