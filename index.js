@@ -8,7 +8,6 @@ const express = require('express');
 const app = express();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const mysql = require('mysql2');
 const cors = require('cors');
 
 app.use(cors()); // 모든 요청 허용
@@ -140,23 +139,6 @@ app.get('/user/points', (req, res) => {
             const user = results[0];
             res.status(200).json({ points: user.points });
         });
-    });
-});
-
-// 기본 테스트 라우트
-app.get('/', (req, res) => {
-    res.send('서버 동작 중');
-});
-
-// 서버 종료 시 DB 연결 종료
-process.on('SIGINT', () => {
-    db.end((err) => {
-        if (err) {
-            console.error('DB 연결 종료 오류:', err);
-        } else {
-            console.log('DB 연결 종료');
-        }
-        process.exit();
     });
 });
 
