@@ -26,7 +26,7 @@ app.use(express.json());
 const db = mysql.createConnection({
     host: 'sql107.infinityfree.com',
     user: 'if0_37825660',
-    port: '3307',
+    port: '3306',
     password: '84PRFHvqBFHeQZz',
     database: 'if0_37825660_testdb'
 });
