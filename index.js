@@ -1,29 +1,25 @@
 // index.js
-require('dotenv').config(); // .env 파일을 로드
-
-const jwtSecret = process.env.JWT_SECRET; // JWT_SECRET 값을 환경 변수에서 불러옵니다.
-
+require('dotenv').config();
 
 const express = require('express');
 const app = express();
+const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
 
-app.use(cors()); // 모든 요청 허용
+app.use(cors());
 app.use(express.json());
 
-const { Client } = require('pg');  // pg 모듈을 불러옵니다.
-
-const client = new Client({
+const pool = new Pool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
     database: process.env.DB_NAME,
-    port: process.env.DB_PORT
+    port: process.env.DB_PORT,
 });
 
-client.connect((err) => {
+pool.connect((err) => {
     if (err) {
         console.error('DB 연결 오류:', err.stack);
     } else {
@@ -31,32 +27,8 @@ client.connect((err) => {
     }
 });
 
-// 인증 미들웨어
-const authenticateUser = (req, res, next) => {
-    const token = req.headers.authorization?.split(' ')[1]; // Bearer 토큰 추출
-    if (!token) {
-        return res.status(401).json({ error: '인증 토큰이 필요합니다.' });
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET); // 토큰 검증
-        console.log('인증 미들웨어 정보', decoded);
-        req.userId = decoded.userId; // 토큰에서 사용자 ID 추출
-        console.log('인증 미들웨어 정보', req.userId);
-
-        next(); // 다음 미들웨어로 이동
-    } catch (err) {
-        console.error('JWT 검증 오류:', err);
-        res.status(401).json({ error: '유효하지 않은 토큰입니다.' });
-    }
-};
-
-
-
-
-// 회원가입 API
 app.post('/signup', async (req, res) => {
-    const { userid, email, password, recommender_id } = req.body;
+    const { userid, email, password, referrerid } = req.body;
 
     if (!userid || !email || !password) {
         return res.status(400).json({ error: '모든 필드를 입력하세요.' });
@@ -64,9 +36,9 @@ app.post('/signup', async (req, res) => {
 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        const finalRecommenderId = recommender_id || null;
+        const finalRecommenderId = referrerid || null;
 
-        const query = 'INSERT INTO users (userid, email, password, recommender_id) VALUES ($1, $2, $3, $4)';
+        const query = 'INSERT INTO users (userid, email, password, referrerid) VALUES ($1, $2, $3, $4)';
         await pool.query(query, [userid, email, hashedPassword, finalRecommenderId]);
 
         res.status(201).json({ message: '회원가입 성공!' });
@@ -76,7 +48,6 @@ app.post('/signup', async (req, res) => {
     }
 });
 
-// 로그인 API
 app.post('/login', (req, res) => {
     const { email, password } = req.body;
 
@@ -95,7 +66,7 @@ app.post('/login', (req, res) => {
             return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
         }
 
-        const user = results.rows[0]; // PostgreSQL에서는 results.rows로 접근합니다.
+        const user = results.rows[0];
 
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
@@ -163,7 +134,7 @@ app.get('/api/users/hierarchy', async (req, res) => {
             WITH RECURSIVE UserHierarchy AS (
                 SELECT 
                     userid AS userid,
-                    recommender_id,
+                    referrerid,
                     created_at AS join_date
                 FROM users
                 WHERE userid = ?
@@ -172,14 +143,14 @@ app.get('/api/users/hierarchy', async (req, res) => {
 
                 SELECT 
                     u.userid AS userid,
-                    u.recommender_id,
+                    u.referrerid,
                     u.created_at AS join_date
                 FROM users u
-                INNER JOIN UserHierarchy uh ON u.recommender_id = uh.userid
+                INNER JOIN UserHierarchy uh ON u.referrerid = uh.userid
             )
             SELECT 
                 userid,
-                recommender_id,
+                referrerid,
                 join_date
             FROM UserHierarchy;
             `,
@@ -220,10 +191,10 @@ function buildHierarchy(users) {
 
     // 계층 관계를 설정
     users.forEach(user => {
-        if (user.recommender_id) {
+        if (user.referrerid) {
             // 추천인이 있는 경우 추천인의 children에 현재 사용자 추가
-            if (map[user.recommender_id]) {
-                map[user.recommender_id].children.push(map[user.userid]);
+            if (map[user.referrerid]) {
+                map[user.referrerid].children.push(map[user.userid]);
             }
         } else {
             // 추천인이 없으면 최상위 사용자로 추가
