@@ -14,39 +14,21 @@ const cors = require('cors');
 app.use(cors()); // 모든 요청 허용
 app.use(express.json());
 
-// MySQL 연결 설정
-// const db = mysql.createConnection({
-//     host: 'localhost',
-//     user: 'root',
-//     port: '3307',
-//     password: 'wkatnry12!',
-//     database: 'mywebdb'
-// });
+const { Client } = require('pg');  // pg 모듈을 불러옵니다.
 
-const db = mysql.createConnection({
-    host: 'sql107.infinityfree.com',
-    user: 'if0_37825660',
-    port: '3306',
-    password: '84PRFHvqBFHeQZz',
-    database: 'if0_37825660_testdb'
+const client = new Client({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT
 });
 
-// const pool = mysql.createPool({
-//     host: 'localhost',
-//     user: 'root',
-//     port: '3307',
-//     password: 'wkatnry12!',
-//     database: 'mywebdb',
-//     waitForConnections: true,  // 연결 대기 설정
-//     connectionLimit: 10,      // 연결 풀의 최대 연결 수
-//     queueLimit: 0             // 대기 큐 제한
-// });
-
-db.connect((err) => {
+client.connect((err) => {
     if (err) {
-        console.error('DB 연결 오류:', err);
+        console.error('DB 연결 오류:', err.stack);
     } else {
-        console.log('MySQL 연결 성공');
+        console.log('PostgreSQL 연결 성공');
     }
 });
 
@@ -82,21 +64,13 @@ app.post('/signup', async (req, res) => {
     }
 
     try {
-        // 비밀번호 암호화
         const hashedPassword = await bcrypt.hash(password, 10);
-
-        // 추천인 ID가 없으면 null로 처리
         const finalRecommenderId = recommender_id || null;
 
-        // DB에 사용자 정보 저장
-        const query = 'INSERT INTO users (userid, email, password, recommender_id) VALUES (?, ?, ?, ?)';
-        db.query(query, [userid, email, hashedPassword, finalRecommenderId], (err, result) => {
-            if (err) {
-                console.error('회원가입 오류:', err);
-                return res.status(500).json({ error: '서버 오류' });
-            }
-            res.status(201).json({ message: '회원가입 성공!' });
-        });
+        const query = 'INSERT INTO users (userid, email, password, recommender_id) VALUES ($1, $2, $3, $4)';
+        await pool.query(query, [userid, email, hashedPassword, finalRecommenderId]);
+
+        res.status(201).json({ message: '회원가입 성공!' });
     } catch (err) {
         console.error('회원가입 처리 중 오류:', err);
         res.status(500).json({ error: '회원가입 중 문제가 발생했습니다.' });
@@ -111,37 +85,27 @@ app.post('/login', (req, res) => {
         return res.status(400).json({ error: '이메일과 비밀번호를 입력하세요.' });
     }
 
-    // 데이터베이스에서 사용자 검색
-    const query = 'SELECT * FROM users WHERE email = ?';
-    db.query(query, [email], async (err, results) => {
+    const query = 'SELECT * FROM users WHERE email = $1';
+    pool.query(query, [email], async (err, results) => {
         if (err) {
             console.error('DB 쿼리 오류:', err);
             return res.status(500).json({ error: '서버 오류' });
         }
 
-        if (results.length === 0) {
+        if (results.rows.length === 0) {
             return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
         }
 
-        const user = results[0]; // DB에서 찾은 사용자 정보        
+        const user = results.rows[0]; // PostgreSQL에서는 results.rows로 접근합니다.
 
-        // 비밀번호 검증
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
-            console.log('비밀번호 불일치:', password, user.password); // 디버깅 로그
             return res.status(401).json({ error: '비밀번호가 올바르지 않습니다.' });
         }
-
-        // JWT 토큰 생성
-        console.log('JWT_SECRET:', process.env.JWT_SECRET); // 비밀 키 확인
 
         const token = jwt.sign({ userId: user.userid, email: user.email }, process.env.JWT_SECRET, {
             expiresIn: '1h',
         });
-        
-        console.log('Generated token:', token); // 생성된 토큰 확인
-        console.log('DB에서 찾은 사용자 정보:', user);
-
 
         res.status(200).json({ message: '로그인 성공', token });
     });
