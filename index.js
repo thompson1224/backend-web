@@ -15,24 +15,32 @@ app.use(cors()); // 모든 요청 허용
 app.use(express.json());
 
 // MySQL 연결 설정
+// const db = mysql.createConnection({
+//     host: 'localhost',
+//     user: 'root',
+//     port: '3307',
+//     password: 'wkatnry12!',
+//     database: 'mywebdb'
+// });
+
 const db = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
+    host: 'sql107.infinityfree.com',
+    user: 'if0_37825660',
     port: '3307',
-    password: 'wkatnry12!',
-    database: 'mywebdb'
+    password: '84PRFHvqBFHeQZz',
+    database: 'if0_37825660_testdb'
 });
 
-const pool = mysql.createPool({
-    host: 'localhost',
-    user: 'root',
-    port: '3307',
-    password: 'wkatnry12!',
-    database: 'mywebdb',
-    waitForConnections: true,  // 연결 대기 설정
-    connectionLimit: 10,      // 연결 풀의 최대 연결 수
-    queueLimit: 0             // 대기 큐 제한
-});
+// const pool = mysql.createPool({
+//     host: 'localhost',
+//     user: 'root',
+//     port: '3307',
+//     password: 'wkatnry12!',
+//     database: 'mywebdb',
+//     waitForConnections: true,  // 연결 대기 설정
+//     connectionLimit: 10,      // 연결 풀의 최대 연결 수
+//     queueLimit: 0             // 대기 큐 제한
+// });
 
 db.connect((err) => {
     if (err) {
