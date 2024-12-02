@@ -261,14 +261,14 @@ app.get('/products/:id', async (req, res) => {
 
         // 2. 구매 내역 저장
         const purchaseQuery = `
-            INSERT INTO purchase_history (user_id, product_id, quantity, total_price)
+            INSERT INTO purchase_history (userid, product_id, quantity, total_price)
             VALUES ($1, $2, $3, $4)
         `;
         await pool.query(purchaseQuery, [userId, productId, quantity, totalPrice]);
 
         // 3. 포인트 적립 내역 저장
         const pointQuery = `
-            INSERT INTO point_history (user_id, type, points, description)
+            INSERT INTO point_history (userid, type, points, description)
             VALUES ($1, 'earn', $2, $3)
         `;
         await pool.query(pointQuery, [userId, totalBonusPoints, `${productData.name} 구매 적립`]);
