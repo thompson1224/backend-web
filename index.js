@@ -284,28 +284,28 @@ app.get('/purchase-history', authenticateUser, async (req, res) => {
     try {
         // 기본 쿼리
         let query = `
-            SELECT ph.id, ph.userid, p.name AS product_name, ph.status, ph.points_used, ph.points_earned, ph.purchase_date
+            SELECT id, userid, name AS product_name, status, points_used, points_earned, purchase_date
             FROM purchase_history ph
-            JOIN products p ON ph.product_id = p.id
+            JOIN products p ON product_id = p.id
             WHERE 1=1
         `;
         const params = [];
 
         // 필터 조건 추가
         if (userId) {
-            query += ` AND ph.userid = $${params.length + 1}`;
+            query += ` AND userid = $${params.length + 1}`;
             params.push(userId);
         }
         if (startDate) {
-            query += ` AND ph.purchase_date >= $${params.length + 1}`;
+            query += ` AND purchase_date >= $${params.length + 1}`;
             params.push(startDate);
         }
         if (endDate) {
-            query += ` AND ph.purchase_date <= $${params.length + 1}`;
+            query += ` AND purchase_date <= $${params.length + 1}`;
             params.push(endDate);
         }
 
-        query += ' ORDER BY ph.purchase_date DESC';
+        query += ' ORDER BY purchase_date DESC';
 
         // 데이터베이스 조회
         const result = await pool.query(query, params);
