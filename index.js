@@ -266,17 +266,6 @@ app.get('/products/:id', async (req, res) => {
         `;
         await pool.query(purchaseQuery, [userId, productId, quantity, totalPrice]);
 
-        // 3. 포인트 적립 내역 저장
-        const pointQuery = `
-            INSERT INTO point_history (userid, type, points, description)
-            VALUES ($1, 'earn', $2, $3)
-        `;
-        await pool.query(pointQuery, [userId, totalBonusPoints, `${productData.name} 구매 적립`]);
-
-        // 4. 사용자 포인트 업데이트
-        const updatePointsQuery = 'UPDATE users SET points = points + $1 WHERE userid = $2';
-        await pool.query(updatePointsQuery, [totalBonusPoints, userId]);
-
         // 5. 응답 반환
         res.json({
             message: '구매가 완료되었습니다.',
@@ -289,6 +278,43 @@ app.get('/products/:id', async (req, res) => {
     }
 });
 
+app.get('/purchase-history', authenticateAdmin, async (req, res) => {
+    const { userId, startDate, endDate } = req.query;
+
+    try {
+        // 기본 쿼리
+        let query = `
+            SELECT ph.id, ph.userid, p.name AS product_name, ph.status, ph.points_used, ph.points_earned, ph.purchase_date
+            FROM purchase_history ph
+            JOIN products p ON ph.product_id = p.id
+            WHERE 1=1
+        `;
+        const params = [];
+
+        // 필터 조건 추가
+        if (userId) {
+            query += ` AND ph.userid = $${params.length + 1}`;
+            params.push(userId);
+        }
+        if (startDate) {
+            query += ` AND ph.purchase_date >= $${params.length + 1}`;
+            params.push(startDate);
+        }
+        if (endDate) {
+            query += ` AND ph.purchase_date <= $${params.length + 1}`;
+            params.push(endDate);
+        }
+
+        query += ' ORDER BY ph.purchase_date DESC';
+
+        // 데이터베이스 조회
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('구매 내역 조회 오류:', err);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
 
 // 서버 실행
 app.listen(3000, () => {
