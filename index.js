@@ -191,96 +191,91 @@ function buildHierarchy(users) {
 app.post('/add-product', async (req, res) => {
     const { name, description, price, pointprice, bonuspoint, stock } = req.body;
 
-    // 필수 필드 체크
     if (!name || !description || price === undefined || stock === undefined) {
         return res.status(400).json({ error: '모든 필드를 입력해주세요.' });
     }
 
     try {
-        // 상품을 데이터베이스에 추가
-        const insertQuery = 'INSERT INTO products (name, description, price, pointprice, bonuspoint , stock) VALUES (?, ?, ?, ?, ?, ?)';
-        db.query(insertQuery, [name, description, price, pointprice, bonuspoint, stock], (err, result) => {
-            if (err) {
-                console.error('상품 추가 오류:', err);
-                return res.status(500).json({ error: '상품 추가 중 오류가 발생했습니다.' });
-            }
+        const query = `
+            INSERT INTO products (name, description, price, pointprice, bonuspoint, stock) 
+            VALUES ($1, $2, $3, $4, $5, $6)
+        `;
+        await pool.query(query, [name, description, price, pointprice, bonuspoint, stock]);
 
-            res.status(201).json({ message: '상품이 성공적으로 추가되었습니다.' });
-        });
+        res.status(201).json({ message: '상품이 성공적으로 추가되었습니다.' });
     } catch (err) {
-        console.error('서버 오류:', err);
+        console.error('상품 추가 오류:', err);
         res.status(500).json({ error: '서버 오류' });
     }
 });
 
 // 상품 목록 조회 API
-app.get('/products', (req, res) => {
-    const selectQuery = 'SELECT * FROM products ORDER BY created_at DESC';
+app.get('/products', async (req, res) => {
+    try {
+        const query = 'SELECT * FROM products ORDER BY created_at DESC';
+        const { rows } = await pool.query(query);
 
-    db.query(selectQuery, (err, results) => {
-        if (err) {
-            console.error('상품 조회 오류:', err);
-            return res.status(500).json({ error: '상품 조회 중 오류가 발생했습니다.' });
-        }
-
-        res.status(200).json(results); // 상품 목록 반환
-    });
+        res.status(200).json(rows);
+    } catch (err) {
+        console.error('상품 조회 오류:', err);
+        res.status(500).json({ error: '서버 오류' });
+    }
 });
 
 // 상품 상세 조회 API
 app.get('/products/:id', async (req, res) => {
     const { id } = req.params;
-  
-    const query = 'SELECT * FROM products WHERE id = ?';
-    db.query(query, [id], (err, results) => {
-      if (err) {
-        console.error('상품 정보 불러오기 오류:', err);
-        return res.status(500).json({ error: '상품 정보를 가져오는 데 실패했습니다.' });
-      }
-      if (results.length === 0) {
-        return res.status(404).json({ error: '상품을 찾을 수 없습니다.' });
-      }
-  
-      res.json(results[0]);
-    });
-  });
-
-  //상품 구매 API
-  app.post('/purchase', authenticateUser, async (req, res) => {
-    console.log('인증된 사용자 ID:', req.userId); // 디버깅용 로그
-    const { productId, quantity } = req.body;
-    const userId = req.userId; // 인증된 사용자 ID
 
     try {
-        // 1. 상품 정보 가져오기 (bonuspoint 포함)
-        const query = 'SELECT * FROM products WHERE id = ?';
-        const [product] = await db.promise().query(query, [productId]);
+        const query = 'SELECT * FROM products WHERE id = $1';
+        const { rows } = await pool.query(query, [id]);
 
-        if (product.length === 0) {
+        if (rows.length === 0) {
             return res.status(404).json({ error: '상품을 찾을 수 없습니다.' });
         }
 
-        const productData = product[0];
+        res.status(200).json(rows[0]);
+    } catch (err) {
+        console.error('상품 상세 조회 오류:', err);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+  //상품 구매 API
+  app.post('/purchase', authenticateUser, async (req, res) => {
+    const { productId, quantity } = req.body;
+    const userId = req.userId;
+
+    try {
+        // 1. 상품 정보 가져오기
+        const productQuery = 'SELECT * FROM products WHERE id = $1';
+        const productResult = await pool.query(productQuery, [productId]);
+
+        if (productResult.rows.length === 0) {
+            return res.status(404).json({ error: '상품을 찾을 수 없습니다.' });
+        }
+
+        const productData = productResult.rows[0];
         const totalPrice = productData.price * quantity;
-        const totalBonusPoints = productData.bonuspoint * quantity; // 총 적립 포인트 계산
+        const totalBonusPoints = productData.bonuspoint * quantity;
 
         // 2. 구매 내역 저장
-        await db.promise().query(
-            'INSERT INTO purchase_history (user_id, product_id, quantity, total_price) VALUES (?, ?, ?, ?)',
-            [userId, productId, quantity, totalPrice]
-        );
+        const purchaseQuery = `
+            INSERT INTO purchase_history (user_id, product_id, quantity, total_price)
+            VALUES ($1, $2, $3, $4)
+        `;
+        await pool.query(purchaseQuery, [userId, productId, quantity, totalPrice]);
 
         // 3. 포인트 적립 내역 저장
-        await db.promise().query(
-            'INSERT INTO point_history (user_id, type, points, description) VALUES (?, ?, ?, ?)',
-            [userId, 'earn', totalBonusPoints, `${productData.name} 구매 적립`]
-        );
+        const pointQuery = `
+            INSERT INTO point_history (user_id, type, points, description)
+            VALUES ($1, 'earn', $2, $3)
+        `;
+        await pool.query(pointQuery, [userId, totalBonusPoints, `${productData.name} 구매 적립`]);
 
         // 4. 사용자 포인트 업데이트
-        await db.promise().query(
-            'UPDATE users SET points = points + ? WHERE userid = ?',
-            [totalBonusPoints, userId]
-        );
+        const updatePointsQuery = 'UPDATE users SET points = points + $1 WHERE userid = $2';
+        await pool.query(updatePointsQuery, [totalBonusPoints, userId]);
 
         // 5. 응답 반환
         res.json({
@@ -288,16 +283,8 @@ app.get('/products/:id', async (req, res) => {
             pointsEarned: totalBonusPoints,
             totalPrice,
         });
-    } catch (error) {
-        console.error('구매 처리 중 오류 발생:', error);
-        res.status(500).json({ error: '구매 처리 중 오류가 발생했습니다.' });
+    } catch (err) {
+        console.error('구매 처리 오류:', err);
+        res.status(500).json({ error: '서버 오류' });
     }
-});
-
-  
-
-
-// 서버 실행
-app.listen(3000, () => {
-    console.log('서버 실행 중: http://localhost:3000');
 });
