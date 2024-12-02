@@ -241,8 +241,8 @@ app.get('/products/:id', async (req, res) => {
     }
 });
 
-  //상품 구매 API
-  app.post('/purchase', authenticateUser, async (req, res) => {
+  // 구매 API (기본 상태: 결제 대기)
+app.post('/purchase', authenticateUser, async (req, res) => {
     const { productId, quantity } = req.body;
     const userId = req.userId;
 
@@ -259,18 +259,21 @@ app.get('/products/:id', async (req, res) => {
         const totalPrice = productData.price * quantity;
         const totalBonusPoints = productData.bonuspoint * quantity;
 
-        // 2. 구매 내역 저장
+        // 2. 구매 내역 저장 (기본 상태: '결제 대기')
         const purchaseQuery = `
-            INSERT INTO purchase_history (userid, product_id, quantity, total_price)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO purchase_history (userid, product_id, points_earned, points_used, status)
+            VALUES ($1, $2, $3, 0, '결제 대기')
+            RETURNING id;
         `;
-        await pool.query(purchaseQuery, [userId, productId, quantity, totalPrice]);
+        const purchaseResult = await pool.query(purchaseQuery, [userId, productId, totalBonusPoints]);
 
-        // 5. 응답 반환
+        const purchaseId = purchaseResult.rows[0].id;
+
+        // 3. 응답 반환
         res.json({
-            message: '구매가 완료되었습니다.',
-            pointsEarned: totalBonusPoints,
-            totalPrice,
+            message: '구매 요청이 접수되었습니다.',
+            purchaseId,
+            status: '결제 대기',
         });
     } catch (err) {
         console.error('구매 처리 오류:', err);
@@ -284,28 +287,35 @@ app.get('/purchase-history', authenticateUser, async (req, res) => {
     try {
         // 기본 쿼리
         let query = `
-            SELECT id, userid, name AS product_name, status, points_used, points_earned, purchase_date
+            SELECT 
+                ph.id AS purchase_id,   -- purchase_history의 id
+                ph.userid, 
+                p.name AS product_name, 
+                ph.status, 
+                ph.points_used, 
+                ph.points_earned, 
+                ph.purchase_date
             FROM purchase_history ph
-            JOIN products p ON product_id = p.id
+            JOIN products p ON ph.product_id = p.id
             WHERE 1=1
         `;
         const params = [];
 
         // 필터 조건 추가
         if (userId) {
-            query += ` AND userid = $${params.length + 1}`;
+            query += ` AND ph.userid = $${params.length + 1}`;
             params.push(userId);
         }
         if (startDate) {
-            query += ` AND purchase_date >= $${params.length + 1}`;
+            query += ` AND ph.purchase_date >= $${params.length + 1}`;
             params.push(startDate);
         }
         if (endDate) {
-            query += ` AND purchase_date <= $${params.length + 1}`;
+            query += ` AND ph.purchase_date <= $${params.length + 1}`;
             params.push(endDate);
         }
 
-        query += ' ORDER BY purchase_date DESC';
+        query += ' ORDER BY ph.purchase_date DESC';
 
         // 데이터베이스 조회
         const result = await pool.query(query, params);
