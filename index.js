@@ -288,3 +288,9 @@ app.get('/products/:id', async (req, res) => {
         res.status(500).json({ error: '서버 오류' });
     }
 });
+
+
+// 서버 실행
+app.listen(3000, () => {
+    console.log('서버 실행 중:');
+});
