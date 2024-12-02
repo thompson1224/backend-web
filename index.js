@@ -278,7 +278,7 @@ app.get('/products/:id', async (req, res) => {
     }
 });
 
-app.get('/purchase-history', authenticateAdmin, async (req, res) => {
+app.get('/purchase-history', authenticateUser, async (req, res) => {
     const { userId, startDate, endDate } = req.query;
 
     try {
