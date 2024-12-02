@@ -326,6 +326,79 @@ app.get('/purchase-history', authenticateUser, async (req, res) => {
     }
 });
 
+// 구매 내역 조회
+app.get('/my-orders', authenticateUser, async (req, res) => {
+    const { userId } = req.user; // 인증된 사용자 ID
+    const { startDate, endDate, limit = 50 } = req.query;
+
+    try {
+        // 기본 쿼리
+        let query = `
+            SELECT 
+                ph.id AS purchase_id, 
+                ph.userid, 
+                p.name AS product_name, 
+                ph.status, 
+                ph.points_used, 
+                ph.points_earned, 
+                ph.purchase_date
+            FROM purchase_history ph
+            JOIN products p ON ph.product_id = p.id
+            WHERE ph.userid = $1
+        `;
+        const params = [userId];
+
+        // 날짜 조건 추가
+        if (startDate) {
+            query += ` AND ph.purchase_date >= $${params.length + 1}`;
+            params.push(startDate);
+        }
+        if (endDate) {
+            query += ` AND ph.purchase_date <= $${params.length + 1}`;
+            params.push(endDate);
+        }
+
+        query += ' ORDER BY ph.purchase_date DESC LIMIT $' + (params.length + 1);
+        params.push(limit);
+
+        // 데이터베이스 조회
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('구매 내역 조회 오류:', err);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// 결제 처리 API
+app.post('/my-orders/pay', authenticateUser, async (req, res) => {
+    const { userId } = req.user; // 인증된 사용자 ID
+    const { purchaseId } = req.body;
+
+    try {
+        // 상태 확인
+        const checkQuery = `SELECT status FROM purchase_history WHERE id = $1 AND userid = $2`;
+        const checkResult = await pool.query(checkQuery, [purchaseId, userId]);
+
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: '구매 내역을 찾을 수 없습니다.' });
+        }
+
+        if (checkResult.rows[0].status !== 'pending') {
+            return res.status(400).json({ error: '이미 결제가 완료된 항목입니다.' });
+        }
+
+        // 결제 상태 업데이트
+        const updateQuery = `UPDATE purchase_history SET status = 'completed' WHERE id = $1 AND userid = $2`;
+        await pool.query(updateQuery, [purchaseId, userId]);
+
+        res.json({ message: '결제가 완료되었습니다.' });
+    } catch (err) {
+        console.error('결제 처리 오류:', err);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // 서버 실행
 app.listen(3000, () => {
     console.log('서버 실행 중:');
